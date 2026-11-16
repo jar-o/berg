@@ -1,4 +1,4 @@
-# berg
+![berg](berg.png)
 
 Same-site crawler built on [tracker-radar-collector](https://github.com/duckduckgo/tracker-radar-collector)'s
 crawler and collectors. Starts from a seed URL, follows same-site links up to a page budget, runs collectors on
