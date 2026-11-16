@@ -1,5 +1,7 @@
 ![berg](berg.png)
 
+Profile websites: Everything "above the line" (content), and below (behavior).
+
 Same-site crawler built on [tracker-radar-collector](https://github.com/duckduckgo/tracker-radar-collector)'s
 crawler and collectors. Starts from a seed URL, follows same-site links up to a page budget, runs collectors on
 every page, and writes per-page JSON plus a `site.json` summary/link graph.
