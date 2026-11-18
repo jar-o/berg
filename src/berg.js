@@ -153,6 +153,7 @@ function buildPageReport(result, seedUrl) {
                   textLength: pageData.textLength,
                   forms: pageData.forms,
                   images: pageData.images,
+                  html: pageData.html,
               }
             : null,
         relationships: {
@@ -261,6 +262,19 @@ async function crawlSite({
                 const screenshotPath = path.join(pagesDir, screenshotName);
                 fs.writeFileSync(screenshotPath, Buffer.from(result.data.screenshots, 'base64'));
                 result.data.screenshots = path.relative(outputDir, screenshotPath);
+            }
+
+            const pageData = /** @type {any} */ (result.data).page;
+            if (pageData && typeof pageData.html === 'string') {
+                const htmlName = createPageFilename(pageIndex, targetUrl).replace(/\.json$/, '.html');
+                const htmlPath = path.join(pagesDir, htmlName);
+                fs.writeFileSync(htmlPath, pageData.html, 'utf8');
+                pageData.html = {
+                    file: path.relative(outputDir, htmlPath),
+                    bytes: Buffer.byteLength(pageData.html, 'utf8'),
+                    originalBytes: pageData.htmlOriginalBytes,
+                };
+                delete pageData.htmlOriginalBytes;
             }
 
             const report = buildPageReport(result, seedUrl);

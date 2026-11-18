@@ -83,7 +83,18 @@ async function testBuildPageReport() {
 
 async function testCrawlSiteRespectsBudgetAndSiteBoundary() {
     const pages = {
-        '/': '<html><head><title>Seed</title></head><body><a href="/p1">P1</a><a href="/p2">P2</a><a href="https://offsite.invalid/away">Away</a></body></html>',
+        '/': [
+            '<!DOCTYPE html>',
+            '<html>',
+            '  <head>\n    <title>Seed</title>\n  </head>',
+            '  <body>',
+            '    <!-- a comment -->',
+            '    <div>\n      <p>Hello   <b>bold</b> <i>italic</i></p>\n    </div>',
+            '    <pre>keep   this\n  layout</pre>',
+            '    <a href="/p1">P1</a><a href="/p2">P2</a><a href="https://offsite.invalid/away">Away</a>',
+            '  </body>',
+            '</html>',
+        ].join('\n'),
         '/p1': '<html><head><title>Page 1</title></head><body><a href="/p3">P3</a><a href="/">Back</a></body></html>',
         '/p2': '<html><head><title>Page 2</title></head><body><p>Two</p></body></html>',
         '/p3': '<html><head><title>Page 3</title></head><body><p>Three</p></body></html>',
@@ -122,6 +133,20 @@ async function testCrawlSiteRespectsBudgetAndSiteBoundary() {
         assert.strictEqual(fullSummary.pagesCrawled, 4);
         assert.strictEqual(fullSummary.pagesSucceeded, 4);
         assert(fs.existsSync(path.join(outDir, 'site.json')));
+
+        // Rendered HTML is whitespace-minified, written as a sidecar, and referenced from the page JSON
+        const seedReport = JSON.parse(fs.readFileSync(path.join(outDir, fullSummary.pages[0].file), 'utf8'));
+        const htmlRef = seedReport.content.html;
+        assert.deepStrictEqual(seedReport.data.page.html, htmlRef);
+        assert.strictEqual(seedReport.data.page.htmlOriginalBytes, undefined);
+        const html = fs.readFileSync(path.join(outDir, htmlRef.file), 'utf8');
+        assert.strictEqual(Buffer.byteLength(html), htmlRef.bytes);
+        assert(htmlRef.bytes < htmlRef.originalBytes);
+        assert(html.startsWith('<!DOCTYPE html>\n<html><head><title>Seed</title></head><body><div><p>'), html);
+        assert(html.includes('<p>Hello <b>bold</b> <i>italic</i></p>'), html);
+        assert(html.includes('<pre>keep   this\n  layout</pre>'), html);
+        assert(!html.includes('a comment'), html);
+        assert(html.includes('<a href="/p1">P1</a>'));
 
         // Test stopping at budget when budget < total pages
         const outDirBudget = fs.mkdtempSync(path.join(os.tmpdir(), 'berg-budget-'));

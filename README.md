@@ -36,10 +36,10 @@ Run `npx berg --help` for all options. Chromium is downloaded on first run into 
 Here's a cute little bash shortcut I use all the time for grabbing a quick profile on just a single site or page:
 
 ```bash
-function snapweb {
+function bergsnap {
     BERGPATH="/berg"   # TODO update with path to repo
     if [ -z "$1" ]; then
-        echo "usage: snapweb <site> [output dir]" >&2
+        echo "usage: bergsnap <site> [output dir]" >&2
         return 1
     fi
     local site="$1"

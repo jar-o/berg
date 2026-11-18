@@ -43,6 +43,9 @@ collectors resolve files via hardcoded `../node_modules/...` paths.
    - Each same-site link not yet discovered is pushed onto the queue, and each unique `from → to` pair is recorded as a graph edge.
    - Writes `pages/NNNN_<slug>_<sha1-8>.json`. If screenshots are enabled, also writes a `.jpg` beside it and puts
      its relative path in the JSON in place of the base64 data.
+   - If the `page` collector ran, writes the whitespace-minified rendered HTML to `pages/NNNN_<slug>_<sha1-8>.html`
+     (plain UTF-8, not compressed). In the JSON, the HTML string is replaced by `{ file, bytes, originalBytes }`
+     (sizes before and after minification), so the page JSON never holds the markup itself.
    - Errors are caught per page and recorded with `status: "error"`. One failed page doesn't stop the crawl.
 4. **Concurrency.** With `-c > 1`, the seed is crawled alone first so the queue has entries, then N workers pull from
    the shared queue. Page indices follow the order in which pages were dequeued.
@@ -64,7 +67,7 @@ Selected with `-d` (comma-separated). Defaults: `page,requests,apis,cookies,targ
 
 | ID | Source | Captures |
 |---|---|---|
-| `page` | `src/PageCollector.js` | Runs one `Runtime.evaluate` in the main frame **after** load + extra time: title, `lang`, canonical, `<meta name/property>` (the first value wins for duplicate keys), headings h1–h6 (text ≤500 chars), every `a[href]` (resolved, deduped by href+text), forms with their input tag/type/name, `script[src]`, `iframe[src]`, `img[src]` with alt, and `body.innerText` (cut off at 100,000 chars; `textLength` holds the untruncated length). Main frame only; content inside iframes is not included. |
+| `page` | `src/PageCollector.js` | Runs one `Runtime.evaluate` in the main frame **after** load + extra time: title, `lang`, canonical, `<meta name/property>` (the first value wins for duplicate keys), headings h1–h6 (text ≤500 chars), every `a[href]` (resolved, deduped by href+text), forms with their input tag/type/name, `script[src]`, `iframe[src]`, `img[src]` with alt, and `body.innerText` (cut off at 100,000 chars; `textLength` holds the untruncated length), and the full rendered DOM (doctype + `documentElement.outerHTML`, not truncated), whitespace-minified, which berg.js writes to the `.html` sidecar. Minification runs on a clone, using the live page's computed styles: it removes comments and indentation and collapses whitespace runs to one space. It keeps whitespace inside `<pre>`, `<textarea>`, `<script>`, `<style>` and anywhere CSS `white-space` preserves it, and keeps a single space between two inline elements. Script and style *contents* are not minified. Main frame only; content inside iframes is not included. |
 | `requests` | radar `RequestCollector` | Every network request: url, method, resource type, status, size, remote IP, initiators, timing, body hash, and **response headers filtered to a safelist** (`etag`, `set-cookie`, `cache-control`, `expires`, `pragma`, `p3p`, `timing-allow-origin`, `access-control-allow-origin`, `accept-ch`). |
 | `apis` | radar `APICallCollector` | Instrumented JS API calls. `callStats` maps script URL → `{ "API description": count }`. `savedCalls` holds selected calls with their arguments (for example, `Document.cookie setter` values). |
 | `cookies` | radar `CookieCollector` | The cookie jar at the end of the page load: name, domain, path, `expires` (ms epoch, after Chrome's 400-day cap), `session`, `sameSite`. |
@@ -111,6 +114,7 @@ writes:
 <out>/
 ├── site.json               # run summary + page index + link graph
 ├── pages/                  # one report per crawled page: 0001_… → NNNN_…
+    ├── NNNN_<slug>_<hash>.html      # rendered HTML, whitespace-minified (page collector)
     └── NNNN_<slug>_<hash>.json.   # page details
 
 ```
@@ -148,7 +152,8 @@ inbound-link counts.
   "initialUrl", "finalUrl", "timeout", "testStarted", "testFinished",
   "content": {            // from PageCollector — "above the line"
     "title", "lang", "canonicalUrl", "meta", "headings": [{level,text}],
-    "text", "textLength", "forms", "images": [{src,alt}]
+    "text", "textLength", "forms", "images": [{src,alt}],
+    "html": { "file": "pages/NNNN_….html", "bytes", "originalBytes" }
   },
   "relationships": {
     "internalLinks": [],  // normalized, deduped, same-site
@@ -168,6 +173,11 @@ inbound-link counts.
 `content`, `relationships` and `behaviors` are views built from `data`. When aggregating, use one or the other, not
 both, or every value will be counted twice. `thirdPartyDomains` uses an exact hostname comparison, so the site's own
 CDN and other subdomains (e.g. `cdn.<host>`) appear there as "third-party". Classify them yourself.
+
+The rendered HTML is the source to check when the extracted fields are not enough, for example inline scripts,
+`data-*` attributes, consent markup, or JSON-LD. Search it with `grep -o` and narrow patterns rather than loading whole
+documents into context. Rendered pages are often over 1 MB, and much of that is long single lines of inline script and
+CSS.
 
 ### How the output is meant to be assessed
 

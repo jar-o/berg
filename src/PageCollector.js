@@ -116,6 +116,89 @@ const PAGE_EXTRACT_SCRIPT = `(() => {
     const bodyText = ((document.body && document.body.innerText) || '').trim();
     const MAX_TEXT = 100000;
 
+    // Full rendered DOM (post-JS), whitespace-minified. Works on a clone so the live page is untouched, but uses the
+    // live nodes' computed styles to decide which whitespace is significant. Not truncated.
+    const { html, htmlOriginalBytes } = (() => {
+        const root = document.documentElement;
+        if (!root) {
+            return { html: '', htmlOriginalBytes: 0 };
+        }
+        const doctype = document.doctype ? new XMLSerializer().serializeToString(document.doctype) : '';
+        const original = root.outerHTML;
+        const htmlOriginalBytes = new TextEncoder().encode((doctype ? doctype + '\\n' : '') + original).length;
+
+        const filter = NodeFilter.SHOW_TEXT | NodeFilter.SHOW_COMMENT;
+        const clone = root.cloneNode(true);
+        const liveNodes = [];
+        const cloneNodes = [];
+        for (const [start, out] of [[root, liveNodes], [clone, cloneNodes]]) {
+            const walker = document.createTreeWalker(start, filter);
+            while (walker.nextNode()) {
+                out.push(walker.currentNode);
+            }
+        }
+        if (liveNodes.length !== cloneNodes.length) {
+            return { html: (doctype ? doctype + '\\n' : '') + original, htmlOriginalBytes };
+        }
+
+        const RAW_TAGS = new Set(['SCRIPT', 'STYLE', 'PRE', 'TEXTAREA']);
+        const styleCache = new Map();
+        const styleOf = (el) => {
+            let s = styleCache.get(el);
+            if (!s) {
+                s = getComputedStyle(el);
+                styleCache.set(el, s);
+            }
+            return s;
+        };
+        const preservesWhitespace = (el) => {
+            if (RAW_TAGS.has(el.tagName)) {
+                return true;
+            }
+            const s = styleOf(el);
+            return s.whiteSpaceCollapse ? s.whiteSpaceCollapse !== 'collapse' : /^pre|break-spaces/.test(s.whiteSpace);
+        };
+        const WS = /[ \\t\\n\\r\\f]+/g;
+        const isBlank = (n) => n.nodeType === Node.TEXT_NODE && !n.data.replace(WS, '');
+        // Nearest sibling that will survive minification (skips comments and blank text)
+        const neighbor = (n, dir) => {
+            let s = n[dir];
+            while (s && (s.nodeType === Node.COMMENT_NODE || isBlank(s))) {
+                s = s[dir];
+            }
+            return s;
+        };
+        const isInline = (n) =>
+            !!n &&
+            (n.nodeType === Node.TEXT_NODE || (n.nodeType === Node.ELEMENT_NODE && styleOf(n).display.startsWith('inline')));
+
+        for (let i = 0; i < liveNodes.length; i++) {
+            const live = liveNodes[i];
+            const copy = cloneNodes[i];
+            if (live.nodeType === Node.COMMENT_NODE) {
+                copy.remove();
+                continue;
+            }
+            const parent = live.parentElement;
+            if (!parent || preservesWhitespace(parent)) {
+                continue;
+            }
+            const collapsed = live.data.replace(WS, ' ');
+            if (collapsed === ' ') {
+                // Whitespace-only: keep one space only where it separates two inline things (e.g. "<b>a</b> <i>b</i>")
+                if (isInline(neighbor(live, 'previousSibling')) && isInline(neighbor(live, 'nextSibling'))) {
+                    copy.data = ' ';
+                } else {
+                    copy.remove();
+                }
+            } else {
+                copy.data = collapsed;
+            }
+        }
+
+        return { html: (doctype ? doctype + '\\n' : '') + clone.outerHTML, htmlOriginalBytes };
+    })();
+
     return {
         url: location.href,
         title,
@@ -130,6 +213,8 @@ const PAGE_EXTRACT_SCRIPT = `(() => {
         scripts,
         iframes,
         images,
+        html,
+        htmlOriginalBytes,
     };
 })()`;
 
@@ -215,4 +300,15 @@ module.exports = PageCollector;
  * @property {string[]} scripts
  * @property {string[]} iframes
  * @property {Array<{src: string, alt: string}>} images
+ * @property {string | PageHtmlRef} html Whitespace-minified rendered DOM as returned by the collector; berg.js
+ *   replaces it with a PageHtmlRef after writing the sidecar file.
+ * @property {number=} htmlOriginalBytes UTF-8 size of the unminified doctype + outerHTML; berg.js folds it into
+ *   PageHtmlRef.
+ */
+
+/**
+ * @typedef PageHtmlRef
+ * @property {string} file path of the minified HTML, relative to the output directory
+ * @property {number} bytes UTF-8 size of the minified HTML file
+ * @property {number} originalBytes UTF-8 size of the rendered HTML before minification
  */
