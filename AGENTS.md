@@ -111,11 +111,11 @@ writes:
 <out>/
 ├── site.json               # run summary + page index + link graph
 ├── pages/                  # one report per crawled page: 0001_… → NNNN_…
-│   └── NNNN_<slug>_<hash>.jpg   # only with the screenshots collector
-└── <host>.md               # the assessment, written afterwards by an agent (not by berg)
+    └── NNNN_<slug>_<hash>.json.   # page details
+
 ```
 
-Output is large. With the default collectors, a 100-page crawl of a tracker-heavy site produces a `site.json` close to
+Output can be large. With the default collectors, a 100-page crawl of a tracker-heavy site produces a `site.json` close to
 1 MB (mostly graph edges), and the request and API data make each page file much bigger than its text content.
 
 ### `site.json`
