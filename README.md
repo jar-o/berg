@@ -31,6 +31,29 @@ npx berg --site https://example.com -b 100 -o data/example.com
 
 Run `npx berg --help` for all options. Chromium is downloaded on first run into `radar/chromium/`.
 
+### Bash functoin
+
+Here's a cute little bash shortcut I use all the time for grabbing a quick profile on just a single site or page:
+
+```bash
+function snapweb {
+    BERGPATH="/berg"   # TODO update with path to repo
+    if [ -z "$1" ]; then
+        echo "usage: snapweb <site> [output dir]" >&2
+        return 1
+    fi
+    local site="$1"
+    [[ "$site" =~ ^https?:// ]] || site="https://$site"
+    local domain="${site#*://}"
+    domain="${domain%%[/?#]*}"
+    domain="${domain##*@}"
+    domain="${domain%%:*}"; domain="${domain,,}"
+    local out="${2:-/tmp/$domain}"
+    [[ "$out" = /* ]] || out="$PWD/$out"
+    (cd "$BERGPATH" && npx berg --site "$site" -b 1 -o "$out")
+}
+```
+
 ## Development
 
 ```sh
